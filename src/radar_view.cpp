@@ -203,6 +203,7 @@ static const char *THEME_NAMES[THEME_COUNT] = { "ORB", "MILITARY", "AVIATOR" };
 // crash rather than as loading. So say what is happening.
 static lv_obj_t   *s_loading         = nullptr;
 static bool        s_loadingPending  = false;   // shown, waiting for the first update()
+static bool        s_vesselFeed      = false;
 static uint32_t    s_loadStartMs     = 0;       // lv_tick_get() when loading began, for the elapsed-time line
 static int         s_loadShownSec    = -1;      // last elapsed-second value painted, so a still-frozen number is never redrawn as "live"
 static lv_obj_t   *s_themeLabel      = nullptr;   // "AVIATOR" etc. banner, shown briefly on a theme change
@@ -3201,6 +3202,8 @@ void tickSweep() { /* sweep self-animates via lv_timer */ }
 //
 // Only after a real gap: aircraft arrive every ten seconds and a single missed poll is
 // normal, so warning at the first hiccup would train people to ignore this.
+void setVesselFeed(bool on) { s_vesselFeed = on; }
+
 void setFeedStatus(bool wifiUp, uint32_t staleSec, bool locationKnown) {
     if (!s_feedWarn) return;
     // No location is not a thing that waiting fixes, so it DISMISSES the loading notice
@@ -3278,7 +3281,9 @@ void setFeedStatus(bool wifiUp, uint32_t staleSec, bool locationKnown) {
     // feed by reading the screen. With one message for both, they could not.
     if (!wifiUp)             msg = "No WiFi\nYour Orb is fine";
     else if (!locationKnown) msg = "Location not set\nSettings " LV_SYMBOL_RIGHT " Location";
-    else if (staleSec >= ADSB_NO_DATA_MS / 1000) msg = "No aircraft data\n" ADSB_SOURCE_NAME " is not answering";
+    else if (staleSec >= ADSB_NO_DATA_MS / 1000)
+        msg = s_vesselFeed ? "No vessel data\nOpen Waters AIS is not answering"
+                           : "No aircraft data\n" ADSB_SOURCE_NAME " is not answering";
     // Log only on change: this is called every status tick, and a line per tick would bury
     // the feed diagnostics underneath it.
     static const char *s_shown = nullptr;

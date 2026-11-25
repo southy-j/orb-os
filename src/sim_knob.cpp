@@ -93,6 +93,13 @@ bool     knob::pendingPress() { return s_pendingPress; }
 uint32_t knob::heldMs()       { return s_down ? s_heldMs : 0; }
 uint32_t knob::longPressMs()  { return LONG_PRESS_MS; }
 
+void knob::injectDetent(int dir) {
+    if (dir > 0) simknob::injectTurn(1);
+    else if (dir < 0) simknob::injectTurn(-1);
+}
+void knob::injectTap() { s_pendingPress = true; }
+void knob::injectLongPress() { s_pendingLong = true; }
+
 // A steady millisecond clock for the injection stamps above. std::chrono rather than SDL so
 // this file keeps no dependency on the windowing layer.
 #include <chrono>
