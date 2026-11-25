@@ -11,6 +11,7 @@
 #include "aircraft.h"
 #include "geo.h"
 #include "adsb_client.h"
+#include "ais_client.h"
 #include "tls_memory.h"
 #include "route.h"
 #include "route_client.h"
@@ -46,7 +47,9 @@
 #include "battery.h"                 // AXP2101 battery gauge
 #include "rtc_pcf85063.h"            // PCF85063 RTC (offline clock + date)
 #include "audio.h"                   // ES8311 alert pings
-#include "knob.h"                    // rotary encoder on the 8-pin header
+#include "knob.h"                    // detent stream (fed by the touch circle; no external encoder)
+#include "touch_circle.h"            // finger around the display -> knob detents
+#include "alarm_view.h"              // kid alarm clock
 #include "app_shell.h"               // "channel changer": knob flips between apps
 #include "input_router.h"            // shared knob->app_shell routing (device + sim)
 #include "diag_log.h"                // RTC-memory event ring buffer, survives a reboot
@@ -101,6 +104,7 @@ static TaskHandle_t          g_adsbTaskHandle = nullptr;
 static TaskHandle_t          g_audioTaskHandle = nullptr;
 static volatile bool         g_acDirty = false; // set when a new snapshot is ready
 static AdsbClient            g_adsb;
+static AisClient             g_ais;
 static RadarSettings         g_settings;
 static WiFiManager           g_wm;
 static int                   g_brightnessDay = BRIGHTNESS_DEFAULT;   // user brightness (web/NVS)
@@ -177,6 +181,7 @@ static volatile bool         g_feedOk = true;                        // ADS-B fe
 // while the user is sitting on Clock or the menu. Set true only while Flight
 // Tracker is the entered app (radar_show_home_custom / radar_exit_release_style).
 static volatile bool         g_radarViewActive = false;
+static volatile bool         g_vesselViewActive = false;
 static volatile uint32_t     g_lastFeedOkMs = 0;                     // millis() of the last good poll (HUD staleness)
 
 static volatile uint32_t     g_rebootAtMs = 0;
@@ -372,7 +377,7 @@ static void adsb_task(void*) {
             // every few seconds for the traffic over the Gulf of Guinea is a request nobody
             // wanted answered. The scope says "Location not set" meanwhile, so the silence
             // is explained rather than looking like a dead feed.
-            if (radarActive && g_locationSet && warm && (lastPoll == 0 || nowMs - lastPoll >= pollInterval)) {  // aircraft feed, while it can be seen
+            if (radarActive && !g_vesselViewActive && g_locationSet && warm && (lastPoll == 0 || nowMs - lastPoll >= pollInterval)) {  // aircraft feed, while it can be seen
                 lastPoll = nowMs;
                 static int failCount = 0;
                 // poll() tries the fallback provider after a primary failure; keep the HUD
@@ -397,6 +402,9 @@ static void adsb_task(void*) {
                 // longer invent an aircraft under any circumstances. A theme.json that still
                 // carries the old flag is simply ignored, which is why the parse went too.
                 if (g_adsb.poll(fresh)) {
+                    if (g_vesselViewActive) {
+                        // The scope switched to vessels while this request was in flight.
+                    } else {
                     Serial.printf("[adsb] fetched %u aircraft\n", (unsigned)fresh.size());
                     failCount = 0;
                     adsbBackoffMs = 0;                        // recovered: back to real-time polling
@@ -416,6 +424,7 @@ static void adsb_task(void*) {
                         applyPolledAircraft(fresh, receivedMs);
                         g_acDirty = true;
                         xSemaphoreGive(g_ac_mutex);
+                    }
                     }
                 } else if (g_adsb.lastWasRefused()) {
                     // The SERVER said no (4xx), which no amount of retrying changes. Two things
@@ -454,6 +463,46 @@ static void adsb_task(void*) {
                                   (unsigned long)(adsbBackoffMs / 1000));
                 }
             }
+
+            // Vessels, only while that scope is the one on the glass. Same table and the
+            // same radar as flights. A poll that finishes after the app was left is dropped
+            // so ships do not land on the flight tracker.
+            {
+                static uint32_t s_lastAis = 0;
+                static uint32_t s_aisBackoff = 0;
+                static bool s_wasVessel = false;
+                if (g_vesselViewActive && !s_wasVessel) s_lastAis = 0;
+                s_wasVessel = g_vesselViewActive;
+                const uint32_t aisInterval = POLL_INTERVAL_MS + s_aisBackoff;
+                if (g_vesselViewActive && g_locationSet &&
+                    (s_lastAis == 0 || nowMs - s_lastAis >= aisInterval)) {
+                    s_lastAis = nowMs;
+                    g_ais.setHome(g_settings.homeLat, g_settings.homeLon);
+                    g_ais.setRange(g_settings.rangeKm);
+                    if (g_ais.poll(fresh)) {
+                        if (g_vesselViewActive) {
+                            s_aisBackoff = 0;
+                            g_feedOk = true;
+                            const uint32_t receivedMs = millis();
+                            g_lastFeedOkMs = receivedMs;
+                            if (xSemaphoreTake(g_ac_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                                applyPolledAircraft(fresh, receivedMs);
+                                g_acDirty = true;
+                                xSemaphoreGive(g_ac_mutex);
+                            }
+                        }
+                    } else if (g_ais.lastWasRefused()) {
+                        s_aisBackoff = 60000UL;
+                        g_lastFeedOkMs = millis();
+                        radar::setFeedNote("No vessel feed\nOpen Waters AIS refused the request\nTrying again in a minute");
+                        Serial.printf("[ais] refused (HTTP %d)\n", g_ais.lastStatus());
+                    } else {
+                        s_aisBackoff = (s_aisBackoff == 0) ? 2000UL : 30000UL;
+                        Serial.printf("[ais] poll failed (HTTP %d)\n", g_ais.lastStatus());
+                    }
+                }
+            }
+
             // Forecasts change slowly. Fetch only after the live ADS-B poll has had priority.
             if ((int32_t)(nowMs - nextWeatherAt) >= 0) {
                 Serial.printf("[weather] fetching %.5f, %.5f...\n",
@@ -891,7 +940,39 @@ static void radar_show_home_custom() {
 }
 static void radar_turn_select(int delta) { radar::knobTurn(delta); }
 static void radar_press_custom_or_theme() { radar::knobPress(); }
-static void radar_exit_release_style() { radar::knobExit(); g_radarViewActive = false; }
+static void radar_exit_release_style() {
+    radar::knobExit();
+    g_radarViewActive = false;
+    radar::setVesselFeed(false);
+}
+
+static void dropContacts() {
+    if (g_ac_mutex && xSemaphoreTake(g_ac_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        g_acTable.clear();
+        g_aircraft.clear();
+        g_snap.clear();
+        g_acDirty = false;
+        xSemaphoreGive(g_ac_mutex);
+    }
+}
+
+static void vessel_enter() {
+    dropContacts();
+    radar::update(g_snap, g_settings);
+    radar::setVesselFeed(true);
+    g_vesselViewActive = true;
+    g_lastFeedOkMs = millis();
+    radar_show_home();
+    radar::knobEnter();
+    radar::setFeedNote("Loading vessels\nnear this place");
+}
+
+static void vessel_exit() {
+    g_vesselViewActive = false;
+    radar::setVesselFeed(false);
+    radar::knobExit();
+    dropContacts();
+}
 void host_wx_zoom_set(int tier);   // defined below, near the other weather-units hosts
 int  host_wx_zoom_tier();
 
@@ -2773,6 +2854,15 @@ void setup() {
     // the ~15 s conversion after a theme push happened over a dead screen and looked
     // exactly like a hang. Deferred so the user can watch it instead.
     theme_art::begin();
+    // No card: the theme was baked into the themeart partition. Wear that slug and
+    // reload its style, which now reads the JSON out of the same partition.
+    if (!theme_select::activeSlug()[0]) {
+        char bakedSlug[theme_select::MAX_SLUG_LEN];
+        if (theme_art::resident_slug(bakedSlug, sizeof(bakedSlug))) {
+            theme_select::wearIfUnset(bakedSlug);
+            Serial.printf("[theme] no card; wearing '%s' from themeart\n", bakedSlug);
+        }
+    }
     psram_mark("after theme_art");
 
     // --- Display + LVGL (M0) ----------------------------------------------
@@ -2885,7 +2975,7 @@ void setup() {
     ui_set_wx_units(host_wx_is_imperial());      // apply saved (or auto-resolved) weather units
     ui_set_wx_zoom(g_wxZoomTier);                 // apply saved weather map zoom tier
 
-    knob::begin();     // rotary encoder on GPIO16/17/18
+    knob::begin();     // detent stream; the external encoder is not attached
 
     // --- App shell: the knob flips between full-screen apps ------------------
     // Clock goes first (app index 0, the boot app) on purpose: it's the only app that
@@ -2913,6 +3003,9 @@ void setup() {
     // than anywhere else. See the residency note in app_shell.h.
     app_shell::add(clockview::screen(), theme_style::names().clock, nullptr, nullptr, false, clockview::onEnter, clockview::onExit, !theme_style::apps().clock);
     app_shell::add(radarScreen, theme_style::names().flight, radar_press_custom_or_theme, radar_turn_select, false, radar_show_home_custom, radar_exit_release_style, !theme_style::apps().flight);
+    app_shell::add(radarScreen, "Schiffe",
+                   radar_press_custom_or_theme, radar_turn_select, false,
+                   vessel_enter, vessel_exit, false);
 #if !APPS_LAUNCH_ONE
     app_shell::add(radarScreen, theme_style::names().weather,  weather_press_cycle, nullptr, false, radar_show_weather, radar_hide_weather, !theme_style::apps().weather);
     spycamview::init();
@@ -2940,6 +3033,10 @@ void setup() {
                    tickerview::onPress, tickerview::onTurn, false,
                    tickerview::onEnter, tickerview::onExit, !theme_style::apps().ticker);  // turn steps the watchlist; onEnter takes the strip canvas only when the design curves it
 #endif
+    alarmview::init();
+    app_shell::add(alarmview::screen(), "Wecker",
+                   alarmview::onPress, alarmview::onTurn, false,
+                   alarmview::onEnter, nullptr, false);
     // Settings is built the first time somebody opens it, not here. It was the single
     // largest holder of internal RAM on the device — 909 LVGL allocations and ~24 KB,
     // measured 2026-10-06 — for the screen reached least often, and internal RAM is the
@@ -3018,7 +3115,8 @@ void setup() {
 #endif
     }
 
-    imu_begin();       // face-down sleep (no-op if the IMU isn't detected)
+    imu_begin();       // face-down sleep (no-op if the IMU isn't detected); also starts the shared I2C bus
+    touch_circle::begin();  // CST9217 on that bus; circle gestures drive the knob
     battery_begin();   // AXP2101 (no-op if not detected / no battery)
     battery_enable_codec_rail();   // power the ES8311 analog rail before audio init
 
@@ -3635,7 +3733,9 @@ void loop() {
     // draw to finish, then the network work, then a SECOND full draw before anything
     // moved: two frames of latency on every turn, which is what made the knob feel
     // sluggish. Handling it first means a turn is acted on by the very next render.
-    knob::poll();                   // drain detents/presses accumulated by the ISR
+    const bool finger = touch_circle::poll();  // circle, tap, and long-hold -> the detent stream
+    knob::poll();                               // copy those detents into the pending delta
+    if (finger && g_idle) { g_idle = false; applyBrightness(); }
     // Before the input is routed, so a clock that ran out one second ago is already asking
     // by the time the next detent arrives rather than one frame later. Cheap: it compares
     // two integers unless the answer has actually changed.
@@ -3761,7 +3861,7 @@ void loop() {
             g_acDirty = false;         // g_aircraft now holds the previous snapshot (overwritten next poll)
             xSemaphoreGive(g_ac_mutex);
             checkAudioEvents();                // ping new-in-range / emergency / military, any screen
-            if (g_radarViewActive) {
+            if (g_radarViewActive || g_vesselViewActive) {
                 // Timed because this is the one chunk of per-poll work that lands on the
                 // RENDER thread: everything else about a poll happens on core 0. If a poll
                 // costs a visible stutter, this is where it is spent.
@@ -3796,11 +3896,12 @@ void loop() {
     // poll interval.
     {
         static bool s_wasRadarVisible = false;
-        if (g_radarViewActive && !s_wasRadarVisible) {
+        const bool scopeVisible = g_radarViewActive || g_vesselViewActive;
+        if (scopeVisible && !s_wasRadarVisible) {
             radar::update(g_snap, g_settings);
             ui_on_data_updated();
         }
-        s_wasRadarVisible = g_radarViewActive;
+        s_wasRadarVisible = scopeVisible;
     }
     if (g_weatherDirty) {
         g_weatherDirty = false;

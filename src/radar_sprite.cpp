@@ -118,6 +118,7 @@ bool load_asset(const char *assetName, const uint8_t *flashPng, uint32_t flashLe
 uint8_t     *s_plateBuf = nullptr;   lv_img_dsc_t s_plateDsc;   bool s_plateTried = false;
 uint8_t     *s_overlayBuf = nullptr; lv_img_dsc_t s_overlayDsc; bool s_overlayTried = false;
 uint8_t     *s_blipBuf = nullptr;    lv_img_dsc_t s_blipDsc;    bool s_blipTried = false;
+uint8_t     *s_shipBuf = nullptr;    lv_img_dsc_t s_shipDsc;    bool s_shipTried = false;
 uint8_t     *s_staticBuf[2] = { nullptr, nullptr }; lv_img_dsc_t s_staticDsc[2]; bool s_staticTried[2] = { false, false };
 uint8_t     *s_cardBuf = nullptr; lv_img_dsc_t s_cardDsc; bool s_cardTried = false;
 uint8_t     *s_ringsBuf = nullptr; lv_img_dsc_t s_ringsDsc; bool s_ringsTried = false;
@@ -193,6 +194,24 @@ const lv_img_dsc_t *radar_custom_blip_icon() {
         }
     }
     if (s_blipBuf) return &s_blipDsc;
+    return nullptr;
+}
+
+// Same sprite path as the aircraft icon. Schiffe draws this instead of radar_blip.png.
+const lv_img_dsc_t *radar_custom_ship_icon() {
+    if (!s_shipTried) {
+        s_shipTried = true;
+        int w = 0, h = 0;
+        if (load_asset("radar_ship.png", nullptr, 0, true, s_shipBuf, w, h, "ship")) {
+            s_shipDsc.header.always_zero = 0;
+            s_shipDsc.header.w = w;
+            s_shipDsc.header.h = h;
+            s_shipDsc.header.cf = LV_IMG_CF_TRUE_COLOR_ALPHA;
+            s_shipDsc.data_size = (uint32_t)w * h * 3;
+            s_shipDsc.data = s_shipBuf;
+        }
+    }
+    if (s_shipBuf) return &s_shipDsc;
     return nullptr;
 }
 
@@ -310,13 +329,14 @@ void radar_sprite_release() {
     if (s_ringsBuf)   { if (!theme_art::owns(s_ringsBuf))   heap_caps_free(s_ringsBuf);   s_ringsBuf = nullptr; }
     if (s_overlayBuf) { if (!theme_art::owns(s_overlayBuf)) heap_caps_free(s_overlayBuf); s_overlayBuf = nullptr; }
     if (s_blipBuf)    { if (!theme_art::owns(s_blipBuf))    heap_caps_free(s_blipBuf);    s_blipBuf = nullptr; }
+    if (s_shipBuf)    { if (!theme_art::owns(s_shipBuf))    heap_caps_free(s_shipBuf);    s_shipBuf = nullptr; }
     for (int i = 0; i < 2; ++i) if (s_staticBuf[i]) {
         if (!theme_art::owns(s_staticBuf[i])) heap_caps_free(s_staticBuf[i]);
         s_staticBuf[i] = nullptr;
     }
     if (s_sweepBuf) { if (!theme_art::owns(s_sweepBuf)) heap_caps_free(s_sweepBuf); s_sweepBuf = nullptr; }
     if (s_cardBuf) { if (!theme_art::owns(s_cardBuf)) heap_caps_free(s_cardBuf); s_cardBuf = nullptr; }
-    s_plateTried = s_overlayTried = s_blipTried = s_ringsTried = false;
+    s_plateTried = s_overlayTried = s_blipTried = s_shipTried = s_ringsTried = false;
     s_staticTried[0] = s_staticTried[1] = false;
     s_sweepTried = false;
     s_cardTried = false;

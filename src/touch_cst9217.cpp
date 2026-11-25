@@ -23,7 +23,8 @@ static bool cst_read_reg(uint16_t reg, uint8_t *data, uint8_t len) {
 }
 
 bool touch_begin() {
-    Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 400000);
+    // The shared I2C bus is already up: imu_begin() is the one Wire.begin() in the
+    // firmware. Starting it again here drops the IMU and the RTC off the bus.
 
     // hardware reset (low 10 ms, high 50 ms)
     pinMode(PIN_TP_RST, OUTPUT);

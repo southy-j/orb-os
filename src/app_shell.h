@@ -88,6 +88,7 @@ namespace app_shell {
     enum Slot {
         APP_CLOCK = 0,
         APP_FLIGHT,
+        APP_VESSELS,
 #if !APPS_LAUNCH_ONE
         APP_WEATHER,
         APP_SURVEILLANCE,
@@ -96,6 +97,7 @@ namespace app_shell {
 #if !APPS_LAUNCH_ONE
         APP_TICKER,
 #endif
+        APP_ALARM,
         APP_SETTINGS,
         APP_COUNT,
     };

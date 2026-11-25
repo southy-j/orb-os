@@ -164,13 +164,13 @@ void knob::begin() {
     uint8_t b = (uint8_t)digitalRead(PIN_KNOB_B);
     s_prevAB = (uint8_t)((a << 1) | b);
 
-    attachInterrupt(digitalPinToInterrupt(PIN_KNOB_A), knob_isr, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(PIN_KNOB_B), knob_isr, CHANGE);
+    // The external encoder is not fitted on this unit. The pins stay pulled up so they
+    // cannot float, and nothing is attached to them: a finger circling the display
+    // injects the same detents (see injectDetent). Leaving the interrupts on with no
+    // knob produced phantom turns.
+    s_swLevel = HIGH;
 
-    s_swLevel = (uint8_t)digitalRead(PIN_KNOB_SW);
-    attachInterrupt(digitalPinToInterrupt(PIN_KNOB_SW), knob_sw_isr, CHANGE);
-
-    Serial.println("[knob] ready on GPIO18(A)/17(B)/16(SW) — turn + push");
+    Serial.println("[knob] no encoder — touch circle drives detents");
 }
 
 void knob::poll() {
@@ -257,3 +257,18 @@ uint32_t knob::heldMs() {
 }
 
 uint32_t knob::longPressMs() { return LONG_PRESS_MS; }
+
+void knob::injectDetent(int dir) {
+    if (dir == 0) return;
+    // poll() is what copies new detents into the pending delta, same as the encoder ISR.
+    on_detent(dir > 0 ? 1 : -1);
+}
+
+void knob::injectTap() {
+    s_pendingPress = true;
+}
+
+void knob::injectLongPress() {
+    s_pendingLong = true;
+    Serial.println("[knob] long-press (reboot)");
+}

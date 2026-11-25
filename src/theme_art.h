@@ -94,6 +94,11 @@ uint32_t baked_manifest(const char *slug);
 // Does the cache already hold anything for this theme?
 bool slug_baked(const char *slug);
 
+// Slug text baked as a raw asset named "slug". A board with no card reads this so the
+// theme in the partition can still be worn. Writes a NUL-terminated string, or returns
+// false when the partition has no such asset.
+bool resident_slug(char *out, size_t cap);
+
 // One-time conversion for the active theme: read each PNG off the card, unpack it once,
 // and store the raw pixels in flash. Runs at boot only when the active theme is not
 // already baked, i.e. right after a theme push, inside the reboot the user is already

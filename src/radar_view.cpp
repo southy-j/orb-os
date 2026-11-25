@@ -203,6 +203,7 @@ static const char *THEME_NAMES[THEME_COUNT] = { "ORB", "MILITARY", "AVIATOR" };
 // crash rather than as loading. So say what is happening.
 static lv_obj_t   *s_loading         = nullptr;
 static bool        s_loadingPending  = false;   // shown, waiting for the first update()
+static bool        s_vesselFeed      = false;
 static uint32_t    s_loadStartMs     = 0;       // lv_tick_get() when loading began, for the elapsed-time line
 static int         s_loadShownSec    = -1;      // last elapsed-second value painted, so a still-frozen number is never redrawn as "live"
 static lv_obj_t   *s_themeLabel      = nullptr;   // "AVIATOR" etc. banner, shown briefly on a theme change
@@ -1460,17 +1461,21 @@ static void draw_custom_ac(lv_draw_ctx_t *d) {
             // blend-mode handling needed at draw time. Pivot/icon bitmap themselves
             // stay compile-time (coupled to whichever icon PNG is actually baked in —
             // see theme_style.h) — only color/size/tint travel per theme here.
-            if (const lv_img_dsc_t *icon = radar_custom_blip_icon()) {
+            const bool vessel = ac.type == "AIS";
+            const lv_img_dsc_t *shipIcon = vessel ? radar_custom_ship_icon() : nullptr;
+            if (const lv_img_dsc_t *icon = shipIcon ? shipIcon : radar_custom_blip_icon()) {
                 // "Rotate to heading" off: the icon always shows at its own
                 // baseline angle, it just moves with the aircraft's position.
                 const float headingDeg = rs.blipRotate ? ((ac.track != ac.track) ? 0.0f : ac.track) : 0.0f;
                 lv_draw_img_dsc_t idsc;
                 lv_draw_img_dsc_init(&idsc);
                 idsc.angle = (int16_t)lroundf((headingDeg + CUSTOM_BLIP_IMAGE_BASELINE_DEG) * 10.0f);
-                // Theme data first, welded macro as the fallback. A theme that ships its
-                // own blip sprite has to be able to say where that sprite turns.
-                const int bpx = rs.blipPivotX >= 0 ? rs.blipPivotX : CUSTOM_RADAR_BLIP_PIVOT_X;
-                const int bpy = rs.blipPivotY >= 0 ? rs.blipPivotY : CUSTOM_RADAR_BLIP_PIVOT_Y;
+                // A vessel uses the ship logo, pivoted on its own centre so the brass
+                // hull stays the colour it was drawn. Aircraft keep the theme's pivot.
+                const int bpx = shipIcon ? (int)icon->header.w / 2
+                                         : (rs.blipPivotX >= 0 ? rs.blipPivotX : CUSTOM_RADAR_BLIP_PIVOT_X);
+                const int bpy = shipIcon ? (int)icon->header.h / 2
+                                         : (rs.blipPivotY >= 0 ? rs.blipPivotY : CUSTOM_RADAR_BLIP_PIVOT_Y);
                 idsc.pivot.x = bpx;
                 idsc.pivot.y = bpy;
                 idsc.opa = scale_opa(LV_OPA_COVER, ac.freshness);
@@ -1479,7 +1484,7 @@ static void draw_custom_ac(lv_draw_ctx_t *d) {
                 // aircraft even if the design normally leaves the icon
                 // untinted — blipColor is already overridden to selColor
                 // above, so this recolors it, same as the editor preview.
-                if (rs.blipImageTint || (isSelected && rs.selStyle == 2)) {
+                if (!shipIcon && (rs.blipImageTint || (isSelected && rs.selStyle == 2))) {
                     idsc.recolor = blipColor;
                     idsc.recolor_opa = LV_OPA_COVER;
                 }
@@ -3201,6 +3206,8 @@ void tickSweep() { /* sweep self-animates via lv_timer */ }
 //
 // Only after a real gap: aircraft arrive every ten seconds and a single missed poll is
 // normal, so warning at the first hiccup would train people to ignore this.
+void setVesselFeed(bool on) { s_vesselFeed = on; }
+
 void setFeedStatus(bool wifiUp, uint32_t staleSec, bool locationKnown) {
     if (!s_feedWarn) return;
     // No location is not a thing that waiting fixes, so it DISMISSES the loading notice
@@ -3278,7 +3285,9 @@ void setFeedStatus(bool wifiUp, uint32_t staleSec, bool locationKnown) {
     // feed by reading the screen. With one message for both, they could not.
     if (!wifiUp)             msg = "No WiFi\nYour Orb is fine";
     else if (!locationKnown) msg = "Location not set\nSettings " LV_SYMBOL_RIGHT " Location";
-    else if (staleSec >= ADSB_NO_DATA_MS / 1000) msg = "No aircraft data\n" ADSB_SOURCE_NAME " is not answering";
+    else if (staleSec >= ADSB_NO_DATA_MS / 1000)
+        msg = s_vesselFeed ? "No vessel data\nOpen Waters AIS is not answering"
+                           : "No aircraft data\n" ADSB_SOURCE_NAME " is not answering";
     // Log only on change: this is called every status tick, and a line per tick would bury
     // the feed diagnostics underneath it.
     static const char *s_shown = nullptr;

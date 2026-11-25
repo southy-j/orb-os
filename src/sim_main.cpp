@@ -28,6 +28,7 @@
 #include "cloud_image.h"
 #include "aircraft.h"
 #include "clock_view.h"
+#include "alarm_view.h"
 #include "theme_audio.h"
 #include "intel_view.h"
 #include "ticker_view.h"
@@ -645,9 +646,14 @@ static void sim_register_apps(lv_obj_t *radarScreen) {
                    radar::knobPress,                              // onPress
                    radar::knobTurn,                               // onTurn (only while captured)
                    false,                                         // start uncaptured (default view)
-                   []() { ui_show_view(0); radar::knobEnter(); }, // onEnter: show scope, then land in default view
+                   []() { ui_show_view(0); radar::knobEnter(); radar::setVesselFeed(false); }, // onEnter: show scope, then land in default view
                    radar::knobExit,                               // onExit: free style + reset selection
                    !theme_style::apps().flight);
+    app_shell::add(radarScreen, "Schiffe",
+                   radar::knobPress, radar::knobTurn, false,
+                   []() { ui_show_view(0); radar::setVesselFeed(true); radar::knobEnter(); },
+                   []() { radar::setVesselFeed(false); radar::knobExit(); },
+                   false);
 #if !APPS_LAUNCH_ONE
     app_shell::add(radarScreen, theme_style::names().weather,
                    []() { static bool fc = false; fc = !fc; ui_set_weather_forecast(fc); },  // push toggles WX/forecast
@@ -681,6 +687,10 @@ static void sim_register_apps(lv_obj_t *radarScreen) {
                    tickerview::onPress, tickerview::onTurn, false,
                    tickerview::onEnter, tickerview::onExit, !theme_style::apps().ticker);
 #endif
+    alarmview::init();
+    app_shell::add(alarmview::screen(), "Wecker",
+                   alarmview::onPress, alarmview::onTurn, false,
+                   alarmview::onEnter, nullptr, false);
     // After the Ticker, matching main.cpp. The selftests below address apps by index, so the
     // two lineups have to stay in the same order or the simulator stops standing in for the
     // device at exactly the moment someone is using it to check one.

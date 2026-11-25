@@ -7,7 +7,7 @@
 // "1.4.2", said "up to date", and left an Orb missing everything in that list. THEME_CAPS
 // exists because this stopped moving; it covers theme settings and nothing else, so a new
 // command or a deleted screen is invisible to it. Move this too.
-#define FW_VERSION "2.18.01"   // shown on the web config page + Stats screen
+#define FW_VERSION "2.19.00"   // shown on the web config page + Stats screen
 // Edit pins below: replace every -1 with the value from the Waveshare factory demo
 // (see docs/HARDWARE.md and docs/SETUP.md). Do NOT guess them.
 
@@ -213,6 +213,16 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 // Phoenix); the trim happens here, after the whole response is on the device.
 #define ADSB_MAX_AIRCRAFT   12              // hard cap parsed per poll
 
+// ---------- AIS (Open Waters, no API key) ----------
+// Anonymous GeoJSON around the device. A User-Agent with an app name, version, and a
+// URL is what the service asks for instead of a token. The box is capped in ais_client
+// so a busy harbour does not turn into a multi-megabyte download.
+#define AIS_HOST            "ais.openwaters.io"
+#define AIS_SOURCE_NAME     "Open Waters AIS"
+#define AIS_USER_AGENT      "TheOrbOS/" FW_VERSION " (ESP32-S3 hobby; +https://github.com/southy-j/orb-os)"
+#define AIS_MAX_VESSELS     12
+#define AIS_QUERY_MAX_KM    20.0f
+
 // ---------- Intel (headlines) ----------
 // Existing headlines/routes gateway. Aircraft positions use direct HTTPS instead.
 #define INTEL_GATEWAY_HOST  "buildtheorb.zionbrock.workers.dev"
@@ -232,12 +242,15 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 #define DEBUG_MEM           0               // 1 = print a [mem] heap/fps line every 5s on serial
 
 // ---------- Pin map ----------
-// VERIFIED (ESPHome def, cross-checked against the Waveshare board definition in
-// xiaozhi-esp32 and a working Arduino_GFX port for this exact panel):
+// Waveshare ESP32-S3-Touch-AMOLED-1.75C, from the board's own Arduino examples
+// (waveshareteam/ESP32-S3-Touch-AMOLED-1.75C examples/arduino/libraries/board_config/pin_config.h).
+// HelloWorld constructs Arduino_CO5300 with this reset pin. The non-C 1.75 map
+// (LCD reset GPIO39, touch reset GPIO40) leaves the C-board CO5300 in reset:
+// gfx->begin() still returns success, TE never pulses, and the glass stays black.
 #define PIN_LCD_CS          12
-#define PIN_LCD_RST         39
+#define PIN_LCD_RST         1
 #define PIN_TP_INT          11
-#define PIN_TP_RST          40
+#define PIN_TP_RST          2
 #define TP_MIRROR_X         true
 #define TP_MIRROR_Y         true
 
@@ -255,7 +268,7 @@ static const float RANGE_STEPS_KM[] = {10.0f, 20.0f, 30.0f, 50.0f, 100.0f};
 // "write between scans" possible at all. Set -1 to disable the wait (see display.cpp).
 #define PIN_LCD_TE          13
 
-// CONFIRMED — CO5300 QSPI databus (LCD_CS=12, LCD_RST=39 above match too):
+// CONFIRMED — CO5300 QSPI databus (LCD_CS=12, LCD_RST=GPIO1 above match too):
 #define PIN_LCD_SCLK        38             // QSPI PCLK
 #define PIN_LCD_D0          4
 #define PIN_LCD_D1          5

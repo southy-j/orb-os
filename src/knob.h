@@ -58,4 +58,13 @@ namespace knob {
 
     uint32_t heldMs();       // how long the button has been continuously held right now (0 if up)
     uint32_t longPressMs();  // the hold duration that triggers takeLongPress() (for a countdown UI)
+
+    // Same detent stream as the encoder, for a finger sliding around the round display.
+    // dir > 0 is clockwise (a right turn), dir < 0 is counter-clockwise. One call is one
+    // detent, and a quick reversal still becomes a rock because it goes through the same
+    // detector as a physical click. A tap with no turn is a press. An 8 s hold is the
+    // recovery long-press.
+    void injectDetent(int dir);
+    void injectTap();
+    void injectLongPress();
 }

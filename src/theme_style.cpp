@@ -1,4 +1,5 @@
 #include "theme_style.h"
+#include "theme_art.h"
 #include "theme_sd.h"
 #include "theme_select.h"
 #include <ArduinoJson.h>
@@ -453,10 +454,17 @@ bool read_style_json(const char *slug, const char *name, JsonDocument &doc) {
     snprintf(path, sizeof(path), "/themes/%s/%s", slug, name);
     size_t len = 0;
     uint8_t *buf = theme_sd::read_whole(path, len, MAX_STYLE_JSON_BYTES);
-    if (!buf) return false;
-    const DeserializationError err = deserializeJson(doc, buf, len);
-    theme_sd::free(buf);
-    return !err;
+    if (buf) {
+        const DeserializationError err = deserializeJson(doc, buf, len);
+        theme_sd::free(buf);
+        return !err;
+    }
+    // No card. A theme baked into the themeart partition carries the same JSON
+    // as a raw asset under the file's own name.
+    const uint8_t *baked = nullptr;
+    size_t bakedLen = 0;
+    if (!theme_art::find_blob(slug, name, baked, bakedLen) || !baked || !bakedLen) return false;
+    return !deserializeJson(doc, baked, bakedLen);
 }
 
 } // namespace

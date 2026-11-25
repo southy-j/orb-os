@@ -133,6 +133,8 @@ void setPacePct(int pct); // frame-request margin over measured render cost, per
 // advisory and this is it. The simulator always passes true; it has no NVS and its centre
 // comes from SIM_HOME_LAT / ORBLAT.
 void setFeedStatus(bool wifiUp, uint32_t staleSec, bool locationKnown);
+// The staleness banner names aircraft unless this is set, in which case it names vessels.
+void setVesselFeed(bool on);
 
 // Replace the "Loading aircraft and location data" notice with the truth, while it is still
 // up. That notice only clears when the first aircraft arrive, so a feed that never answers

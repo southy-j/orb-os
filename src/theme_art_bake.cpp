@@ -18,6 +18,7 @@
 #include <esp_heap_caps.h>
 #include "theme_sd.h"
 #include "theme_select.h"
+#include "sdcard.h"
 
 namespace theme_art {
 namespace {
@@ -126,6 +127,12 @@ bool bake_active_theme(bool force) {
     const char *slug = theme_select::activeSlug();
     if (!slug || !slug[0]) return false;
     if (!space_total()) return false;              // no partition on this layout
+    // The bake reads PNGs off the card and erases the partition before it writes.
+    // With no card that erase would throw away a theme that was baked in already.
+    if (!sdcard::mounted()) {
+        Serial.println("[theme_art] no card — leaving the baked themeart partition alone");
+        return false;
+    }
     // Re-bake when the theme's declared asset list has moved, not only when nothing is
     // baked at all. Without this, adding a layer to a theme would never reach flash and
     // removing one would leave the old pixels cached: the cache would quietly drift from

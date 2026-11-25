@@ -22,6 +22,16 @@ There is at most one request per provider per poll, with at least 1.1 seconds be
 to the same provider. No DNS-edge rotation is used to bypass rate limits. Multiple devices
 sharing a public IP must collectively respect the provider limit.
 
+## Vessels: Open Waters AIS
+
+`GET https://ais.openwaters.io/v1/vessels?bbox={minLat},{minLon},{maxLat},{maxLon}&kind=vessel&max_age=6h&max_age_moving=30m`
+
+No API key. The request must send a User-Agent naming the app, its version, and a URL
+(`AIS_USER_AGENT` in `config.h`). The box is the device location, clamped to 20 km, so a
+harbour reply stays about the size of one aircraft poll. The parser keeps the twelve
+nearest vessels and the flight scope draws them. Positions are whatever that reply
+contained. An empty scope means the feed had no vessels there.
+
 ## TLS memory
 
 Before networking starts, `tls_memory_begin()` installs the stock mbedTLS runtime allocator
