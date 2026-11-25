@@ -194,6 +194,23 @@ const uint8_t *find_active(const char *assetName, Format wantFmt, int &w, int &h
     return p;
 }
 
+bool resident_slug(char *out, size_t cap) {
+    if (!out || cap < 2 || !s_mapped || !s_hdr.count) return false;
+    for (uint32_t i = 0; i < s_hdr.count; ++i) {
+        const Entry &e = s_index[i];
+        if (strncmp(e.name, "slug", sizeof(e.name)) != 0) continue;
+        if (e.fmt != FMT_RAW || e.len == 0) continue;
+        const size_t n = e.len < cap - 1 ? e.len : cap - 1;
+        memcpy(out, (const uint8_t *)s_mapped + e.offset, n);
+        out[n] = 0;
+        // The blob is the slug and nothing else. A trailing newline is not part of it.
+        size_t L = strlen(out);
+        while (L && (out[L - 1] == '\n' || out[L - 1] == '\r')) out[--L] = 0;
+        return out[0] != 0;
+    }
+    return false;
+}
+
 bool slug_baked(const char *slug) {
     if (!s_mapped || !s_hdr.count || !slug || !slug[0]) return false;
     const uint32_t want = slug_hash(slug);
@@ -366,6 +383,7 @@ bool find_blob(const char *, const char *, const uint8_t *&, size_t &) { return 
 const uint8_t *find_active(const char *, Format, int &, int &) { return nullptr; }
 bool owns(const void *) { return false; }
 bool slug_baked(const char *) { return false; }
+bool resident_slug(char *out, size_t) { if (out) out[0] = 0; return false; }
 bool install_begin(const char *, uint32_t, bool) { return false; }
 bool install_asset(const char *, const char *, int, int, Format, const uint8_t *, size_t) { return false; }
 bool install_commit() { return false; }

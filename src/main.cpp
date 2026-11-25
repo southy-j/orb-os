@@ -2854,6 +2854,15 @@ void setup() {
     // the ~15 s conversion after a theme push happened over a dead screen and looked
     // exactly like a hang. Deferred so the user can watch it instead.
     theme_art::begin();
+    // No card: the theme was baked into the themeart partition. Wear that slug and
+    // reload its style, which now reads the JSON out of the same partition.
+    if (!theme_select::activeSlug()[0]) {
+        char bakedSlug[theme_select::MAX_SLUG_LEN];
+        if (theme_art::resident_slug(bakedSlug, sizeof(bakedSlug))) {
+            theme_select::wearIfUnset(bakedSlug);
+            Serial.printf("[theme] no card; wearing '%s' from themeart\n", bakedSlug);
+        }
+    }
     psram_mark("after theme_art");
 
     // --- Display + LVGL (M0) ----------------------------------------------

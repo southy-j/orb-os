@@ -2,9 +2,13 @@
 #include "app_shell.h"
 #include "app_theme.h"
 #include "config.h"
+#include "custom_sprite.h"
 #include "orb_time.h"
+#include "theme_font.h"
+#include "theme_style.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #if defined(ARDUINO)
@@ -23,6 +27,12 @@ lv_obj_t *s_digital = nullptr;
 lv_obj_t *s_hourHand = nullptr;
 lv_obj_t *s_minHand = nullptr;
 lv_obj_t *s_secHand = nullptr;
+bool s_themed = false;
+lv_obj_t *s_themeHand[3] = { nullptr, nullptr, nullptr };
+lv_obj_t *s_themeShadow[3] = { nullptr, nullptr, nullptr };
+lv_img_dsc_t s_themeDsc[3];
+lv_img_dsc_t s_shadowDsc[3];
+lv_img_dsc_t s_plateDsc;
 lv_point_t s_hourPts[2];
 lv_point_t s_minPts[2];
 lv_point_t s_secPts[2];
@@ -69,15 +79,56 @@ void hand(lv_point_t pts[2], float deg, float length) {
     pts[1].y = (lv_coord_t)(SCREEN_CY - cosf(rad) * length);
 }
 
+void setAngle(lv_obj_t *img, float deg) {
+    if (!img) return;
+    int a = (int)lroundf(deg * 10.0f) % 3600;
+    if (a < 0) a += 3600;
+    lv_img_set_angle(img, (int16_t)a);
+}
+
 void paintHands(int hour, int minute, int second, bool showSecond) {
     const float mins = (float)minute + (float)second / 60.0f;
-    hand(s_hourPts, ((hour % 12) + mins / 60.0f) * 30.0f, 78.0f);
-    hand(s_minPts, mins * 6.0f, 118.0f);
-    hand(s_secPts, second * 6.0f, 140.0f);
+    const float hourDeg = ((hour % 12) + mins / 60.0f) * 30.0f;
+    const float minDeg = mins * 6.0f;
+    const float secDeg = second * 6.0f;
+    if (s_themed) {
+        const float deg[3] = { hourDeg, minDeg, secDeg };
+        for (int k = 0; k < 3; ++k) {
+            const float d = (k == 2 && !showSecond) ? 0.0f : deg[k];
+            setAngle(s_themeShadow[k], d);
+            setAngle(s_themeHand[k], d);
+            if (k == 2) {
+                const lv_opa_t opa = showSecond ? LV_OPA_COVER : LV_OPA_TRANSP;
+                if (s_themeHand[2]) lv_obj_set_style_img_opa(s_themeHand[2], opa, 0);
+                if (s_themeShadow[2]) lv_obj_set_style_img_opa(s_themeShadow[2], opa, 0);
+            }
+        }
+        return;
+    }
+    hand(s_hourPts, hourDeg, 78.0f);
+    hand(s_minPts, minDeg, 118.0f);
+    hand(s_secPts, secDeg, 140.0f);
     if (s_hourHand) lv_line_set_points(s_hourHand, s_hourPts, 2);
     if (s_minHand)  lv_line_set_points(s_minHand, s_minPts, 2);
     if (s_secHand)  lv_obj_set_style_line_opa(s_secHand, showSecond ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     if (s_secHand)  lv_line_set_points(s_secHand, s_secPts, 2);
+}
+
+lv_obj_t *placeSprite(lv_obj_t *parent, lv_img_dsc_t *dsc, const uint8_t *data,
+                      int w, int h, int pivotX, int pivotY, int centerX, int centerY) {
+    if (!data || w <= 0 || h <= 0) return nullptr;
+    memset(dsc, 0, sizeof(*dsc));
+    dsc->header.w = (uint16_t)w;
+    dsc->header.h = (uint16_t)h;
+    dsc->header.cf = LV_IMG_CF_TRUE_COLOR_ALPHA;
+    dsc->data_size = (uint32_t)w * h * 3;
+    dsc->data = data;
+    lv_obj_t *img = lv_img_create(parent);
+    lv_img_set_src(img, dsc);
+    lv_img_set_pivot(img, pivotX, pivotY);
+    lv_img_set_antialias(img, true);
+    lv_obj_set_pos(img, centerX - pivotX, centerY - pivotY);
+    return img;
 }
 
 void paint() {
@@ -207,6 +258,35 @@ void alarmview::init() {
     lv_obj_set_style_bg_opa(s_scr, LV_OPA_COVER, 0);
     lv_obj_clear_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
 
+    const uint16_t *plate = custom_plate();
+    if (plate) {
+        s_themed = true;
+        memset(&s_plateDsc, 0, sizeof(s_plateDsc));
+        s_plateDsc.header.w = SCREEN_W;
+        s_plateDsc.header.h = SCREEN_H;
+        s_plateDsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+        s_plateDsc.data_size = (uint32_t)SCREEN_W * SCREEN_H * 2;
+        s_plateDsc.data = (const uint8_t *)plate;
+        lv_obj_t *bg = lv_img_create(s_scr);
+        lv_img_set_src(bg, &s_plateDsc);
+        lv_obj_center(bg);
+        const theme_style::Clock &ck = theme_style::clock();
+        for (int k = 0; k < 3; ++k) {
+            const theme_style::Hand &hd = ck.hand[k];
+            if (!hd.show) continue;
+            if (ck.shadowOn) {
+                CustomSprite sh = custom_shadow(k);
+                s_themeShadow[k] = placeSprite(s_scr, &s_shadowDsc[k], sh.data, sh.w, sh.h,
+                                               hd.pivotX, hd.pivotY,
+                                               hd.centerX + ck.shadowDX, hd.centerY + ck.shadowDY);
+            }
+            CustomSprite spr = custom_hand(k);
+            s_themeHand[k] = placeSprite(s_scr, &s_themeDsc[k], spr.data, spr.w, spr.h,
+                                         hd.pivotX, hd.pivotY, hd.centerX, hd.centerY);
+        }
+    }
+
+    if (!s_themed) {
     lv_obj_t *ring = lv_obj_create(s_scr);
     lv_obj_set_size(ring, 400, 400);
     lv_obj_center(ring);
@@ -242,9 +322,10 @@ void alarmview::init() {
     lv_obj_set_style_radius(cap, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(cap, pal.accent, 0);
     lv_obj_set_style_border_width(cap, 0, 0);
+    }
 
     s_digital = lv_label_create(s_scr);
-    lv_obj_set_style_text_font(s_digital, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(s_digital, s_themed ? theme_font::clock_text1() : &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(s_digital, pal.ink, 0);
     lv_obj_align(s_digital, LV_ALIGN_CENTER, 0, -78);
 

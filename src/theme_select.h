@@ -17,6 +17,9 @@ constexpr int MAX_THEMES   = 16;   // generous — SD capacity isn't the constra
 void init();                 // load the saved slug from NVS; call once at boot (mirrors app_theme::init())
 const char *activeSlug();    // "" if none saved, or nothing installed — callers fall through to flash/stock
 void set(const char *slug);  // persists, then reboots/re-execs — see app_theme::set()
+// Wear a slug that is already on the device, without rebooting and without writing NVS.
+// No effect when a slug is already chosen. Reloads style afterwards.
+void wearIfUnset(const char *slug);
 
 // Delete an installed theme's folder from the card. Returns false if the slug is not
 // installed, or if it is the one currently being worn: a theme cannot be pulled out from

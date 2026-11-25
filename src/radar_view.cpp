@@ -1461,17 +1461,21 @@ static void draw_custom_ac(lv_draw_ctx_t *d) {
             // blend-mode handling needed at draw time. Pivot/icon bitmap themselves
             // stay compile-time (coupled to whichever icon PNG is actually baked in —
             // see theme_style.h) — only color/size/tint travel per theme here.
-            if (const lv_img_dsc_t *icon = radar_custom_blip_icon()) {
+            const bool vessel = ac.type == "AIS";
+            const lv_img_dsc_t *shipIcon = vessel ? radar_custom_ship_icon() : nullptr;
+            if (const lv_img_dsc_t *icon = shipIcon ? shipIcon : radar_custom_blip_icon()) {
                 // "Rotate to heading" off: the icon always shows at its own
                 // baseline angle, it just moves with the aircraft's position.
                 const float headingDeg = rs.blipRotate ? ((ac.track != ac.track) ? 0.0f : ac.track) : 0.0f;
                 lv_draw_img_dsc_t idsc;
                 lv_draw_img_dsc_init(&idsc);
                 idsc.angle = (int16_t)lroundf((headingDeg + CUSTOM_BLIP_IMAGE_BASELINE_DEG) * 10.0f);
-                // Theme data first, welded macro as the fallback. A theme that ships its
-                // own blip sprite has to be able to say where that sprite turns.
-                const int bpx = rs.blipPivotX >= 0 ? rs.blipPivotX : CUSTOM_RADAR_BLIP_PIVOT_X;
-                const int bpy = rs.blipPivotY >= 0 ? rs.blipPivotY : CUSTOM_RADAR_BLIP_PIVOT_Y;
+                // A vessel uses the ship logo, pivoted on its own centre so the brass
+                // hull stays the colour it was drawn. Aircraft keep the theme's pivot.
+                const int bpx = shipIcon ? (int)icon->header.w / 2
+                                         : (rs.blipPivotX >= 0 ? rs.blipPivotX : CUSTOM_RADAR_BLIP_PIVOT_X);
+                const int bpy = shipIcon ? (int)icon->header.h / 2
+                                         : (rs.blipPivotY >= 0 ? rs.blipPivotY : CUSTOM_RADAR_BLIP_PIVOT_Y);
                 idsc.pivot.x = bpx;
                 idsc.pivot.y = bpy;
                 idsc.opa = scale_opa(LV_OPA_COVER, ac.freshness);
@@ -1480,7 +1484,7 @@ static void draw_custom_ac(lv_draw_ctx_t *d) {
                 // aircraft even if the design normally leaves the icon
                 // untinted — blipColor is already overridden to selColor
                 // above, so this recolors it, same as the editor preview.
-                if (rs.blipImageTint || (isSelected && rs.selStyle == 2)) {
+                if (!shipIcon && (rs.blipImageTint || (isSelected && rs.selStyle == 2))) {
                     idsc.recolor = blipColor;
                     idsc.recolor_opa = LV_OPA_COVER;
                 }

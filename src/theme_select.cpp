@@ -118,6 +118,13 @@ void init() {
 
 const char *activeSlug() { return s_slug; }
 
+void wearIfUnset(const char *slug) {
+    if (!slug || !slug[0] || s_slug[0]) return;
+    strncpy(s_slug, slug, sizeof(s_slug) - 1);
+    s_slug[sizeof(s_slug) - 1] = 0;
+    theme_style::load();
+}
+
 void set(const char *slug) {
     if (!slug) slug = "";
 #ifdef ARDUINO
